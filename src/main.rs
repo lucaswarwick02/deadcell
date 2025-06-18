@@ -1,4 +1,5 @@
 mod walk;
+mod parse;
 
 use clap::Parser;
 use std::path::PathBuf;
@@ -18,4 +19,15 @@ fn main() {
     for path in &cli.paths {
         visit_paths(path);
     }
+
+    parse::parse_python_source(r#"
+import os
+
+class Thing:
+    def __init__(self):
+        self.x = 1
+
+def func(): pass
+"#);
+
 }

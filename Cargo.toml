@@ -2,6 +2,12 @@
 name = "deadcell"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 [dependencies]
 clap = { version = "4.3", features = ["derive"]}
+tree-sitter = "0.20"
+tree-sitter-python = "0.20"
+
+[build-dependencies]
+cc = "1.0"
