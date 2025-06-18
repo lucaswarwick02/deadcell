@@ -1,44 +1,67 @@
-use tree_sitter::{Language, Parser, TreeCursor};
+use tree_sitter::{Language, Parser, Node};
+use crate::symbols::{SymbolTable, UsageTable};
 
 extern "C" { fn tree_sitter_python() -> Language; }
 
-pub fn parse_python_source(source_code: &str) {
+pub fn parse_python_source(
+    source_code: &str,
+    filename: &str,
+    symbols: &mut SymbolTable,
+    usages: &mut UsageTable,
+) {
     let mut parser = Parser::new();
-    parser.set_language(unsafe { tree_sitter_python() }).expect("Error loading Python grammar");
+    parser.set_language(unsafe { tree_sitter_python() }).expect("Failed to load Python grammar");
 
     if let Some(tree) = parser.parse(source_code, None) {
         let root = tree.root_node();
-        let cursor = root.walk();
-
-        walk_and_print(cursor, source_code);
-    } else {
-        println!("Failed to parse source.");
+        visit_node(root, source_code, filename, symbols, usages);
     }
 }
 
-fn walk_and_print(cursor: TreeCursor, source: &str) {
-    visit_node(cursor.node(), source);
-}
+fn visit_node(
+    node: Node,
+    source: &str,
+    filename: &str,
+    symbols: &mut SymbolTable,
+    usages: &mut UsageTable,
+) {
+    let kind = node.kind();
 
-fn visit_node(node: tree_sitter::Node, source: &str) {
-    if node.kind() == "function_definition"
-        || node.kind() == "class_definition"
-        || node.kind() == "import_statement"
-        || node.kind() == "import_from_statement"
-    {
-        let text = node.utf8_text(source.as_bytes()).unwrap_or("<err>");
-        let first_line = text.lines().next().unwrap_or(text);
-        println!(
-            "[{}] @ line {}: {}",
-            node.kind(),
-            node.start_position().row + 1,
-            first_line
-        );
-    }
-
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
-            visit_node(child, source);
+    match kind {
+        "function_definition" => {
+            if let Some(name_node) = node.child_by_field_name("name") {
+                let name = name_node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
+                let line = name_node.start_position().row + 1;
+                symbols.add_declaration(&name, (filename.to_string(), line));
+            }
         }
+        "class_definition" => {
+            if let Some(name_node) = node.child_by_field_name("name") {
+                let name = name_node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
+                let line = name_node.start_position().row + 1;
+                symbols.add_declaration(&name, (filename.to_string(), line));
+            }
+        }
+        "import_statement" | "import_from_statement" => {
+            // Extract imported names (simplified)
+            for child in node.named_children(&mut node.walk()) {
+                if child.kind() == "identifier" {
+                    let name = child.utf8_text(source.as_bytes()).unwrap_or("").to_string();
+                    let line = child.start_position().row + 1;
+                    symbols.add_declaration(&name, (filename.to_string(), line));
+                }
+            }
+        }
+        "identifier" => {
+            // Consider this a usage of a symbol
+            let name = node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
+            let line = node.start_position().row + 1;
+            usages.add_usage(&name, (filename.to_string(), line));
+        }
+        _ => {}
+    }
+
+    for child in node.named_children(&mut node.walk()) {
+        visit_node(child, source, filename, symbols, usages);
     }
 }
