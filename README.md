@@ -74,7 +74,6 @@ Ignore paths:
 
 Contributions welcome! Open an issue or submit a PR.
 
---
 
 ## License
 
